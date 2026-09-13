@@ -1264,7 +1264,7 @@ export default function DepartmentDashboard({ initialTab = "ACTIVE" }) {
       {/* ========================================================================= */}
       {showBroadcastModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-150">
-          <div className="w-full max-w-lg rounded-3xl bg-slate-900 border border-blue-500/40 p-6 shadow-2xl space-y-4">
+          <div className="w-full max-w-xl rounded-3xl bg-slate-900 border border-blue-500/40 p-6 shadow-2xl space-y-4">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <div className="flex items-center gap-2">
                 <Megaphone className="w-5 h-5 text-blue-400" />
@@ -1280,7 +1280,7 @@ export default function DepartmentDashboard({ initialTab = "ACTIVE" }) {
 
             <form onSubmit={handleCreateBroadcast} className="space-y-4">
               <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-300 mb-1.5">
+                <label className="h-5 flex items-center text-[11px] font-bold uppercase tracking-wider text-slate-300 mb-1.5 whitespace-nowrap">
                   Announcement Title *
                 </label>
                 <input
@@ -1289,50 +1289,50 @@ export default function DepartmentDashboard({ initialTab = "ACTIVE" }) {
                   placeholder="e.g. Scheduled Transformer Maintenance & Temporary Power Cut"
                   value={broadcastForm.title}
                   onChange={(e) => setBroadcastForm({ ...broadcastForm, title: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
+                  className="w-full h-10 bg-slate-950 border border-slate-800 rounded-xl px-3.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
                 />
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-300 mb-1.5">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
+                <div className="flex flex-col">
+                  <label className="h-5 flex items-center text-[11px] font-bold uppercase tracking-wider text-slate-300 mb-1.5 whitespace-nowrap overflow-hidden">
                     Alert Urgency *
                   </label>
                   <select
                     value={broadcastForm.alert_type}
                     onChange={(e) => setBroadcastForm({ ...broadcastForm, alert_type: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-white focus:outline-none focus:border-blue-500"
+                    className="w-full h-10 bg-slate-950 border border-slate-800 rounded-xl px-3 text-xs text-white focus:outline-none focus:border-blue-500 cursor-pointer"
                   >
-                    <option value="ADVISORY">ADVISORY (Service Maintenance)</option>
-                    <option value="WARNING">WARNING (Traffic / Hazard)</option>
-                    <option value="EMERGENCY">EMERGENCY (Critical Danger)</option>
-                    <option value="INFO">INFO (General Notice)</option>
+                    <option value="ADVISORY">ADVISORY (Service)</option>
+                    <option value="WARNING">WARNING (Hazard)</option>
+                    <option value="EMERGENCY">EMERGENCY (Danger)</option>
+                    <option value="INFO">INFO (Notice)</option>
                   </select>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-300 mb-1.5">
-                    Target Sector / Ward / Area *
+                <div className="flex flex-col">
+                  <label className="h-5 flex items-center text-[11px] font-bold uppercase tracking-wider text-slate-300 mb-1.5 whitespace-nowrap overflow-hidden">
+                    Target Sector / Ward *
                   </label>
                   <input
                     type="text"
                     required
-                    placeholder="e.g. Ward 4, Civil Lines, or All Wards"
+                    placeholder="e.g. Ward 4 or All Wards"
                     value={broadcastForm.target_ward}
                     onChange={(e) => setBroadcastForm({ ...broadcastForm, target_ward: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
+                    className="w-full h-10 bg-slate-950 border border-slate-800 rounded-xl px-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
                   />
                 </div>
 
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-300 mb-1.5 flex items-center gap-1">
-                    <Clock className="w-3 h-3 text-amber-400" />
+                <div className="flex flex-col">
+                  <label className="h-5 flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-slate-300 mb-1.5 whitespace-nowrap overflow-hidden">
+                    <Clock className="w-3.5 h-3.5 text-amber-400 shrink-0" />
                     Notice Expiry Time *
                   </label>
                   <select
                     value={broadcastForm.expiry_option}
                     onChange={(e) => setBroadcastForm({ ...broadcastForm, expiry_option: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-white focus:outline-none focus:border-blue-500"
+                    className="w-full h-10 bg-slate-950 border border-slate-800 rounded-xl px-3 text-xs text-white focus:outline-none focus:border-blue-500 cursor-pointer"
                   >
                     <option value="1_HR">1 Hour (1 hr)</option>
                     <option value="3_HR">3 Hours (3 hr)</option>
