@@ -301,11 +301,8 @@ export default function Landing() {
             <span className="text-xs text-slate-500">Official Municipal Public Safety Platform</span>
           </div>
 
-          <div className="flex items-center gap-6 text-xs text-slate-400">
-            <Link to="/track" className="hover:text-white transition-colors">Track Issue</Link>
-            <Link to="/login" className="hover:text-white transition-colors">Citizen Portal</Link>
-            <Link to="/officer" className="hover:text-white transition-colors">Officer Portal</Link>
-            <Link to="/admin" className="hover:text-white transition-colors">Admin Command</Link>
+          <div className="text-xs text-slate-400">
+            Made by <span className="text-slate-300 font-medium">Nikitha, Daya, Uditha, Ahal</span>
           </div>
         </div>
       </footer>
