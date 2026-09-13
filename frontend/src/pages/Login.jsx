@@ -133,15 +133,6 @@ export default function Login() {
               Register as Citizen
             </Link>
           </div>
-          <div className="flex items-center justify-center gap-3 text-[11px] text-slate-500 pt-1">
-            <Link to="/officer" className="hover:text-cyan-400 transition-colors">
-              Department Officer Portal →
-            </Link>
-            <span>•</span>
-            <Link to="/admin" className="hover:text-violet-400 transition-colors">
-              Admin Command →
-            </Link>
-          </div>
         </div>
       </div>
     </div>
