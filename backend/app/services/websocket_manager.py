@@ -71,6 +71,15 @@ class ConnectionManager:
                 except Exception:
                     self.disconnect_citizen(connection, user_id)
 
+    async def broadcast_to_all_citizens(self, message: Dict[str, Any]):
+        payload = json.dumps(message)
+        for user_id, connections in list(self.citizen_connections.items()):
+            for connection in list(connections):
+                try:
+                    await connection.send_text(payload)
+                except Exception:
+                    self.disconnect_citizen(connection, user_id)
+
     async def broadcast_new_complaint(self, department_id: int, complaint_data: Dict[str, Any]):
         event = {
             "type": "NEW_COMPLAINT",
@@ -87,6 +96,32 @@ class ConnectionManager:
         await self.broadcast_to_department(department_id, event)
         await self.broadcast_to_admin(event)
         await self.broadcast_to_citizen(user_id, event)
+
+    async def broadcast_new_alert(self, alert_data: Dict[str, Any], target_user_id: Any = None):
+        event = {
+            "type": "NEW_BROADCAST",
+            "broadcast": alert_data
+        }
+        if target_user_id:
+            await self.broadcast_to_citizen(target_user_id, event)
+        else:
+            await self.broadcast_to_all_citizens(event)
+        await self.broadcast_to_admin(event)
+        for dept_id in list(self.department_connections.keys()):
+            await self.broadcast_to_department(dept_id, event)
+
+    async def broadcast_alert_deleted(self, broadcast_id: int, target_user_id: Any = None):
+        event = {
+            "type": "BROADCAST_DELETED",
+            "broadcast_id": broadcast_id
+        }
+        if target_user_id:
+            await self.broadcast_to_citizen(target_user_id, event)
+        else:
+            await self.broadcast_to_all_citizens(event)
+        await self.broadcast_to_admin(event)
+        for dept_id in list(self.department_connections.keys()):
+            await self.broadcast_to_department(dept_id, event)
 
 
 ws_manager = ConnectionManager()

@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse, FileResponse
 from app.core.config import settings
 from app.db.init_db import init_database
-from app.routers import auth, complaints, departments, officers, admin
+from app.routers import auth, complaints, departments, officers, admin, broadcasts
 from app.services.websocket_manager import ws_manager
 
 logging.basicConfig(
@@ -17,13 +17,41 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+import asyncio
+from app.db.database import SessionLocal
+from app.routers.broadcasts import cleanup_expired_broadcasts
+
+
+async def periodic_broadcast_expiry_cleaner():
+    """Background worker that continuously sweeps and purges expired announcements every 20 seconds."""
+    logger.info("Started background municipal broadcast auto-expiry cleaner.")
+    while True:
+        try:
+            await asyncio.sleep(20)
+            db = SessionLocal()
+            try:
+                await cleanup_expired_broadcasts(db)
+            finally:
+                db.close()
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error(f"Error in periodic broadcast cleaner: {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting CivicPulse AI platform...")
     init_database()
+    cleaner_task = asyncio.create_task(periodic_broadcast_expiry_cleaner())
     yield
     # Shutdown
+    cleaner_task.cancel()
+    try:
+        await cleaner_task
+    except asyncio.CancelledError:
+        pass
     logger.info("Shutting down CivicPulse AI platform.")
 
 
@@ -54,6 +82,7 @@ app.include_router(departments.router, prefix=settings.API_V1_STR)
 app.include_router(complaints.router, prefix=settings.API_V1_STR)
 app.include_router(officers.router, prefix=settings.API_V1_STR)
 app.include_router(admin.router, prefix=settings.API_V1_STR)
+app.include_router(broadcasts.router, prefix=settings.API_V1_STR)
 
 
 # Health Check

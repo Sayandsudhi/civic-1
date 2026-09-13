@@ -19,9 +19,14 @@ import {
   Calendar,
   Sparkles,
   X,
-  SlidersHorizontal
+  SlidersHorizontal,
+  Megaphone,
+  Trash2,
+  Send,
+  Plus
 } from "lucide-react";
 import { officerService } from "../../services/officerService";
+import { broadcastService } from "../../services/broadcastService";
 import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../../context/ToastContext";
 import StatCard from "../../components/StatCard";
@@ -46,6 +51,25 @@ function calculateResolutionDuration(createdAt, resolvedAt) {
   if (days > 0) return `${days}d ${remHours}h`;
   if (hours > 0) return `${hours}h ${remMins}m`;
   return `${diffMins} min${diffMins === 1 ? "" : "s"}`;
+}
+
+// Helper: Compute remaining time until announcement expires
+function formatRemainingTime(expiresAt) {
+  if (!expiresAt) return null;
+  const now = new Date();
+  const exp = new Date(expiresAt);
+  const diffMs = exp - now;
+  if (diffMs <= 0) return "Expired";
+
+  const diffMins = Math.floor(diffMs / 60000);
+  const hours = Math.floor(diffMins / 60);
+  const days = Math.floor(hours / 24);
+  const remHours = hours % 24;
+  const remMins = diffMins % 60;
+
+  if (days > 0) return `${days}d ${remHours}h left`;
+  if (hours > 0) return `${hours}h ${remMins}m left`;
+  return `${diffMins} min${diffMins === 1 ? "" : "s"} left`;
 }
 
 export default function DepartmentDashboard({ initialTab = "ACTIVE" }) {
@@ -83,6 +107,99 @@ export default function DepartmentDashboard({ initialTab = "ACTIVE" }) {
   // Print resolution certificate modal
   const [printComplaint, setPrintComplaint] = useState(null);
 
+  // Broadcasts and Citizen Messaging state
+  const [broadcasts, setBroadcasts] = useState([]);
+  const [loadingBroadcasts, setLoadingBroadcasts] = useState(false);
+  const [showBroadcastModal, setShowBroadcastModal] = useState(false);
+  const [broadcastForm, setBroadcastForm] = useState({
+    title: "",
+    message: "",
+    alert_type: "ADVISORY",
+    target_ward: "All Wards",
+    expiry_option: "3_HR"
+  });
+  const [submittingBroadcast, setSubmittingBroadcast] = useState(false);
+  const [deletingBroadcastId, setDeletingBroadcastId] = useState(null);
+
+  const loadBroadcasts = async () => {
+    try {
+      setLoadingBroadcasts(true);
+      const data = await broadcastService.getOfficerBroadcasts();
+      setBroadcasts(data || []);
+    } catch (err) {
+      console.error("Failed loading department broadcasts:", err);
+    } finally {
+      setLoadingBroadcasts(false);
+    }
+  };
+
+  const handleCreateBroadcast = async (e) => {
+    e.preventDefault();
+    const title = broadcastForm.title.trim();
+    const message = broadcastForm.message.trim();
+    const target_ward = broadcastForm.target_ward.trim() || "All Wards";
+
+    if (!title) {
+      showToast("Please enter an announcement title.", "warning");
+      return;
+    }
+    if (!message) {
+      showToast("Please enter notice details & instructions.", "warning");
+      return;
+    }
+
+    try {
+      setSubmittingBroadcast(true);
+      const newAlert = await broadcastService.createBroadcast({
+        title,
+        message,
+        alert_type: broadcastForm.alert_type || "ADVISORY",
+        target_ward,
+        expiry_option: broadcastForm.expiry_option || "3_HR"
+      });
+      setBroadcasts((prev) => [newAlert, ...prev]);
+      setShowBroadcastModal(false);
+      setBroadcastForm({
+        title: "",
+        message: "",
+        alert_type: "ADVISORY",
+        target_ward: "",
+        expiry_option: "3_HR"
+      });
+      showToast("📢 Municipal announcement published and pushed to citizens!", "success");
+    } catch (err) {
+      console.error("Failed to publish broadcast:", err);
+      let errorMsg = "Failed to publish announcement.";
+      if (err.response?.data?.detail) {
+        const d = err.response.data.detail;
+        if (Array.isArray(d)) {
+          errorMsg = d.map((item) => item.msg || JSON.stringify(item)).join("; ");
+        } else if (typeof d === "string") {
+          errorMsg = d;
+        }
+      }
+      showToast(errorMsg, "error");
+    } finally {
+      setSubmittingBroadcast(false);
+    }
+  };
+
+  const handleDeleteBroadcast = async (id) => {
+    if (!window.confirm("Delete this municipal announcement? It will be removed immediately from all citizen notification panels.")) return;
+
+    try {
+      setDeletingBroadcastId(id);
+      await broadcastService.deleteBroadcast(id);
+      setBroadcasts((prev) => prev.filter((b) => b.id !== id));
+      showToast("Announcement deleted. Removed from citizens' notification panels.", "info");
+    } catch (err) {
+      console.error("Failed to delete broadcast:", err);
+      showToast("Failed to delete announcement.", "error");
+    } finally {
+      setDeletingBroadcastId(null);
+    }
+  };
+
   useEffect(() => {
     if (location.pathname.includes("/resolved")) {
       setActiveViewTab("RESOLVED");
@@ -104,6 +221,7 @@ export default function DepartmentDashboard({ initialTab = "ACTIVE" }) {
 
   useEffect(() => {
     loadComplaints();
+    loadBroadcasts();
   }, []);
 
   // Setup WebSocket connection for live complaints in this department
@@ -138,6 +256,13 @@ export default function DepartmentDashboard({ initialTab = "ACTIVE" }) {
             loadComplaints();
           } else if (data.type === "STATUS_UPDATE") {
             loadComplaints();
+          } else if (data.type === "BROADCAST_DELETED" && data.broadcast_id) {
+            setBroadcasts((prev) => prev.filter((b) => b.id !== data.broadcast_id));
+          } else if (data.type === "NEW_BROADCAST" && data.broadcast) {
+            setBroadcasts((prev) => {
+              if (prev.some((b) => b.id === data.broadcast.id)) return prev;
+              return [data.broadcast, ...prev];
+            });
           }
         } catch {}
       };
@@ -151,6 +276,16 @@ export default function DepartmentDashboard({ initialTab = "ACTIVE" }) {
       }
     };
   }, [user]);
+
+  // Periodic interval to automatically remove expired broadcasts from view
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setBroadcasts((prev) =>
+        prev.filter((b) => !b.expires_at || new Date(b.expires_at) > new Date())
+      );
+    }, 15000);
+    return () => clearInterval(timer);
+  }, []);
 
   // Handle Quick Status Commit
   const handleUpdateStatusSubmit = async (e) => {
@@ -377,6 +512,23 @@ export default function DepartmentDashboard({ initialTab = "ACTIVE" }) {
               activeViewTab === "RESOLVED" ? "bg-black/30 text-white" : "bg-slate-800 text-slate-400"
             }`}>
               {resolvedTotal}
+            </span>
+          </button>
+
+          <button
+            onClick={() => setActiveViewTab("BROADCASTS")}
+            className={`flex items-center gap-2.5 px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
+              activeViewTab === "BROADCASTS"
+                ? "bg-blue-600 text-white shadow-xs"
+                : "text-slate-400 hover:text-white"
+            }`}
+          >
+            <Megaphone className="w-4 h-4 text-blue-300" />
+            <span>Ward Alerts & Bulletins</span>
+            <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono ${
+              activeViewTab === "BROADCASTS" ? "bg-black/30 text-white" : "bg-slate-800 text-slate-400"
+            }`}>
+              {broadcasts.length}
             </span>
           </button>
         </div>
@@ -754,6 +906,129 @@ export default function DepartmentDashboard({ initialTab = "ACTIVE" }) {
       )}
 
       {/* ========================================================================= */}
+      {/* PANEL 3: WARD BROADCASTS & CITIZEN ANNOUNCEMENTS */}
+      {/* ========================================================================= */}
+      {activeViewTab === "BROADCASTS" && (
+        <div className="space-y-4 animate-in fade-in duration-200">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 rounded-2xl bg-slate-900/80 border border-slate-800">
+            <div>
+              <div className="flex items-center gap-2">
+                <Megaphone className="w-5 h-5 text-blue-400" />
+                <h2 className="text-lg font-black text-white tracking-tight">Public Advisories & Ward Bulletins</h2>
+              </div>
+              <p className="text-xs text-slate-400 mt-1">
+                Post service shutdown schedules, water/power maintenance alerts, or emergency notices directly to citizens' notification panels.
+              </p>
+            </div>
+
+            <button
+              onClick={() => setShowBroadcastModal(true)}
+              className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 active:scale-[0.98] text-white text-xs font-bold shadow-lg shadow-blue-500/25 border border-blue-400/30 flex items-center gap-2 transition-all shrink-0"
+            >
+              <Plus className="w-4 h-4" />
+              Post New Announcement
+            </button>
+          </div>
+
+          {loadingBroadcasts ? (
+            <div className="space-y-3">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="h-28 rounded-2xl animate-pulse bg-slate-900/60 border border-slate-800" />
+              ))}
+            </div>
+          ) : broadcasts.length === 0 ? (
+            <div className="p-12 text-center rounded-3xl bg-slate-900/40 border border-slate-800">
+              <Megaphone className="w-12 h-12 text-slate-600 mx-auto mb-3" />
+              <h4 className="text-base font-bold text-white">No active announcements from your department</h4>
+              <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
+                Use the "Post New Announcement" button above to inform residents about scheduled maintenance or emergencies.
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {broadcasts.map((b) => {
+                const isEmergency = b.alert_type === "EMERGENCY";
+                const isWarning = b.alert_type === "WARNING";
+                const isAdvisory = b.alert_type === "ADVISORY";
+
+                const borderStyle = isEmergency 
+                  ? "border-rose-500/40 bg-rose-950/10" 
+                  : isWarning 
+                  ? "border-orange-500/30 bg-orange-950/10"
+                  : isAdvisory 
+                  ? "border-blue-500/30 bg-blue-950/10"
+                  : "border-slate-800 bg-slate-900/70";
+
+                const badgeStyle = isEmergency 
+                  ? "bg-rose-500/15 text-rose-400 border-rose-500/30" 
+                  : isWarning 
+                  ? "bg-orange-500/15 text-orange-400 border-orange-500/30"
+                  : isAdvisory 
+                  ? "bg-blue-500/15 text-blue-400 border-blue-500/30"
+                  : "bg-slate-500/15 text-slate-300 border-slate-700/50";
+
+                return (
+                  <div
+                    key={b.id}
+                    className={`p-5 rounded-2xl border ${borderStyle} flex flex-col justify-between gap-4 transition-all hover:border-slate-700 shadow-sm relative group`}
+                  >
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <span className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full border ${badgeStyle}`}>
+                          {b.alert_type}
+                        </span>
+                        <div className="flex items-center gap-2">
+                          {b.expires_at ? (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-md bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                              <Clock className="w-3 h-3 text-amber-400" />
+                              {formatRemainingTime(b.expires_at)}
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-md bg-slate-800/80 text-slate-400 border border-slate-700/60">
+                              <Clock className="w-3 h-3 text-slate-500" />
+                              No Expiry
+                            </span>
+                          )}
+                          <span className="text-[10px] text-slate-500 font-mono">
+                            {formatDateTime(b.created_at)}
+                          </span>
+                        </div>
+                      </div>
+
+                      <h3 className="text-sm font-bold text-white leading-snug">
+                        {b.title}
+                      </h3>
+
+                      <p className="text-xs text-slate-300 leading-relaxed">
+                        {b.message}
+                      </p>
+                    </div>
+
+                    <div className="pt-3 border-t border-slate-800/80 flex items-center justify-between text-xs">
+                      <span className="inline-flex items-center gap-1 text-[11px] text-slate-400">
+                        <MapPin className="w-3.5 h-3.5 text-blue-400" />
+                        {b.target_ward || "All Wards"}
+                      </span>
+
+                      <button
+                        onClick={() => handleDeleteBroadcast(b.id)}
+                        disabled={deletingBroadcastId === b.id}
+                        title="Delete announcement (removes from citizen notification panel)"
+                        className="px-3 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 text-[11px] font-semibold flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        {deletingBroadcastId === b.id ? "Deleting..." : "Delete Announcement"}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ========================================================================= */}
       {/* QUICK STATUS UPDATE MODAL */}
       {/* ========================================================================= */}
       {selectedComplaint && (
@@ -980,6 +1255,136 @@ export default function DepartmentDashboard({ initialTab = "ACTIVE" }) {
                 Print Resolution Slip
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* POST NEW ANNOUNCEMENT MODAL */}
+      {/* ========================================================================= */}
+      {showBroadcastModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="w-full max-w-lg rounded-3xl bg-slate-900 border border-blue-500/40 p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <Megaphone className="w-5 h-5 text-blue-400" />
+                <h3 className="text-base font-black text-white">Issue Municipal Announcement</h3>
+              </div>
+              <button
+                onClick={() => setShowBroadcastModal(false)}
+                className="text-slate-400 hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateBroadcast} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-300 mb-1.5">
+                  Announcement Title *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Scheduled Transformer Maintenance & Temporary Power Cut"
+                  value={broadcastForm.title}
+                  onChange={(e) => setBroadcastForm({ ...broadcastForm, title: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-300 mb-1.5">
+                    Alert Urgency *
+                  </label>
+                  <select
+                    value={broadcastForm.alert_type}
+                    onChange={(e) => setBroadcastForm({ ...broadcastForm, alert_type: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-white focus:outline-none focus:border-blue-500"
+                  >
+                    <option value="ADVISORY">ADVISORY (Service Maintenance)</option>
+                    <option value="WARNING">WARNING (Traffic / Hazard)</option>
+                    <option value="EMERGENCY">EMERGENCY (Critical Danger)</option>
+                    <option value="INFO">INFO (General Notice)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-300 mb-1.5">
+                    Target Sector / Ward / Area *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Ward 4, Civil Lines, or All Wards"
+                    value={broadcastForm.target_ward}
+                    onChange={(e) => setBroadcastForm({ ...broadcastForm, target_ward: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-300 mb-1.5 flex items-center gap-1">
+                    <Clock className="w-3 h-3 text-amber-400" />
+                    Notice Expiry Time *
+                  </label>
+                  <select
+                    value={broadcastForm.expiry_option}
+                    onChange={(e) => setBroadcastForm({ ...broadcastForm, expiry_option: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-white focus:outline-none focus:border-blue-500"
+                  >
+                    <option value="1_HR">1 Hour (1 hr)</option>
+                    <option value="3_HR">3 Hours (3 hr)</option>
+                    <option value="8_HR">8 Hours (8 hr)</option>
+                    <option value="12_HR">12 Hours (12 hr)</option>
+                    <option value="1_DAY">1 Day (24 hrs)</option>
+                    <option value="7_DAY">7 Days (1 week)</option>
+                    <option value="1_MONTH">1 Month (30 days)</option>
+                    <option value="NO_EXPIRY">No Expiry (Permanent)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-300 mb-1.5">
+                  Notice Details & Citizen Instructions *
+                </label>
+                <textarea
+                  rows={4}
+                  required
+                  placeholder="Describe the situation, expected outage/disruption hours, affected streets, and safety instructions for residents..."
+                  value={broadcastForm.message}
+                  onChange={(e) => setBroadcastForm({ ...broadcastForm, message: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 leading-relaxed"
+                />
+              </div>
+
+              <div className="p-3 rounded-xl bg-blue-500/10 border border-blue-500/20 text-[11px] text-blue-300 leading-relaxed flex items-start gap-2">
+                <Sparkles className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
+                <span>
+                  This notice will be pushed in real-time to citizen notification panels. Once the selected <strong>expiry time</strong> elapses, it will be automatically deleted from both citizen and officer panels.
+                </span>
+              </div>
+
+              <div className="flex items-center gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowBroadcastModal(false)}
+                  className="w-full py-2.5 rounded-xl bg-slate-800 text-xs font-semibold text-slate-300 hover:bg-slate-700"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingBroadcast}
+                  className="w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold shadow-lg shadow-blue-500/25 disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  {submittingBroadcast ? "Broadcasting..." : "Publish Broadcast"}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

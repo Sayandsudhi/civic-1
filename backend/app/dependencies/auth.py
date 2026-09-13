@@ -78,3 +78,12 @@ def require_citizen(current_user: User = Depends(get_current_user)) -> User:
             detail="Action is only available for Citizen accounts."
         )
     return current_user
+
+
+def require_officer_or_admin(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> User:
+    if current_user.role in [UserRole.ADMIN, UserRole.DEPARTMENT_OFFICER]:
+        return current_user
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Access restricted to authorized Department Officers or Administrators."
+    )

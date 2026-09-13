@@ -8,8 +8,14 @@ export function ToastProvider({ children }) {
   const [toasts, setToasts] = useState([]);
 
   const showToast = (message, type = "info", duration = 4500) => {
+    let msgText = message;
+    if (Array.isArray(message)) {
+      msgText = message.map((m) => (typeof m === "object" ? m.msg || JSON.stringify(m) : String(m))).join("; ");
+    } else if (typeof message === "object" && message !== null) {
+      msgText = message.msg || message.detail || JSON.stringify(message);
+    }
     const id = Date.now() + Math.random();
-    setToasts((prev) => [...prev, { id, message, type }]);
+    setToasts((prev) => [...prev, { id, message: String(msgText || "Notification"), type }]);
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
     }, duration);

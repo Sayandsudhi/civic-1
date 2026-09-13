@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { Activity, ShieldCheck, LogOut, User, Menu, X, PlusCircle, Search, LayoutDashboard, Building2 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
+import NotificationPanel from "./NotificationPanel";
 
 export default function Navbar() {
   const { user, logout, isAuthenticated, isCitizen, isOfficer, isAdmin } = useAuth();
@@ -58,6 +59,7 @@ export default function Navbar() {
 
         {/* Right CTA / Auth Status */}
         <div className="hidden md:flex items-center gap-3">
+          <NotificationPanel />
           {isAuthenticated ? (
             <div className="flex items-center gap-3">
               {isCitizen && (
@@ -107,6 +109,7 @@ export default function Navbar() {
 
         {/* Mobile menu button */}
         <div className="md:hidden flex items-center gap-2">
+          <NotificationPanel />
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
             className="p-2 rounded-xl text-slate-300 hover:text-white bg-slate-900 border border-slate-800"

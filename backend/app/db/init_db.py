@@ -9,6 +9,7 @@ from app.models.department import Department
 from app.models.officer import DepartmentOfficer
 from app.models.complaint import Complaint, ComplaintStatus, PriorityLevel
 from app.models.complaint_update import ComplaintUpdate
+from app.models.broadcast import Broadcast, AlertType
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +18,25 @@ def init_database():
     """Create all tables and seed initial platform data."""
     logger.info("Initializing database tables...")
     Base.metadata.create_all(bind=engine)
+
+    # Ensure broadcast expiry columns exist (compatible with existing SQLite & PostgreSQL databases)
+    try:
+        from sqlalchemy import text
+        with engine.connect() as conn:
+            is_sqlite = str(engine.url).startswith("sqlite")
+            if is_sqlite:
+                cols = [r[1] for r in conn.execute(text("PRAGMA table_info(broadcasts)")).fetchall()]
+                if "expires_at" not in cols:
+                    conn.execute(text("ALTER TABLE broadcasts ADD COLUMN expires_at DATETIME;"))
+                if "expiry_option" not in cols:
+                    conn.execute(text("ALTER TABLE broadcasts ADD COLUMN expiry_option VARCHAR(50) DEFAULT 'NO_EXPIRY';"))
+                conn.commit()
+            else:
+                conn.execute(text("ALTER TABLE broadcasts ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP WITH TIME ZONE;"))
+                conn.execute(text("ALTER TABLE broadcasts ADD COLUMN IF NOT EXISTS expiry_option VARCHAR(50) DEFAULT 'NO_EXPIRY';"))
+                conn.commit()
+    except Exception as e:
+        logger.debug(f"Broadcast columns migration notice: {e}")
 
     db: Session = SessionLocal()
     try:
@@ -314,6 +334,49 @@ def init_database():
                     )
                     db.add(u2)
                 db.commit()
+
+        # 5. Default Municipal Ward Broadcasts & Public Advisories
+        if db.query(Broadcast).count() == 0:
+            logger.info("Seeding initial municipal advisories and ward announcements...")
+            kseb_dept = db.query(Department).filter(Department.code == "KSEB_ELECTRICITY").first()
+            road_dept = db.query(Department).filter(Department.code == "ROAD_SAFETY").first()
+            first_dept = db.query(Department).first()
+
+            now = datetime.now(timezone.utc)
+            sample_broadcasts = [
+                Broadcast(
+                    title="Scheduled Feeder Line Maintenance — Temporary Outage",
+                    message="KSEB Substation technical maintenance underway. Feeder line replacement will cause scheduled interruptions between 10:00 AM and 2:00 PM. Emergency medical facilities remain on dedicated backup lines.",
+                    alert_type=AlertType.ADVISORY,
+                    department_id=kseb_dept.id if kseb_dept else (first_dept.id if first_dept else 1),
+                    target_ward="Ward 4 - Gandhi Nagar",
+                    created_by_id=admin_user.id,
+                    is_active=True,
+                    created_at=now - timedelta(hours=1)
+                ),
+                Broadcast(
+                    title="Flyover Expansion Joint Resurfacing & Traffic Detour",
+                    message="Heavy road equipment deployed on Central Flyover for urgent asphalt re-laying. Heavy vehicles redirected through the Outer Ring Bypass until 6:00 PM.",
+                    alert_type=AlertType.WARNING,
+                    department_id=road_dept.id if road_dept else (first_dept.id if first_dept else 1),
+                    target_ward="All Wards",
+                    created_by_id=admin_user.id,
+                    is_active=True,
+                    created_at=now - timedelta(hours=3)
+                ),
+                Broadcast(
+                    title="Monsoon Preparedness & Chlorination Protocol Active",
+                    message="Intensive chlorination and pipeline desilting active across all municipal pumping stations. Tap water quality conforms to certified potable standards.",
+                    alert_type=AlertType.INFO,
+                    department_id=first_dept.id if first_dept else 1,
+                    target_ward="All Wards",
+                    created_by_id=admin_user.id,
+                    is_active=True,
+                    created_at=now - timedelta(hours=5)
+                )
+            ]
+            db.add_all(sample_broadcasts)
+            db.commit()
 
         logger.info("Database initialization and seeding completed successfully.")
     finally:
